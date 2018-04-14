@@ -22,6 +22,8 @@ import struct
 import subprocess
 import sys
 
+# Script to run on remote server:
+###############################################################################################
 remote_script = r'''
 import hashlib
 import os
@@ -29,19 +31,24 @@ import os.path
 import struct
 import sys
 
+# Get remote file size, block size, filename and hash algorithm from client
 (size, blocksize, filename_len, hashname_len) = struct.unpack('<QQQQ', sys.stdin.read(8+8+8+8))
 filename = sys.stdin.read(filename_len)
 hashname = sys.stdin.read(hashname_len)
 
+# Create sparse file if it doesn't already exist
 if not os.path.exists(filename):
-    # Create sparse file
     with open(filename, 'wb') as f:
         f.truncate(size)
     os.chmod(filename, 0600)
 
 with open(filename, 'rb+') as f:
     f.seek(0, 2)
+
+    # Send file size to client
     sys.stdout.write(struct.pack('<Q', f.tell()))
+
+    # Send digest of each block to client
     readremain = size
     rblocksize = blocksize
     f.seek(0)
@@ -57,6 +64,8 @@ with open(filename, 'rb+') as f:
         if readremain == 0:
 	    break
     sys.stdout.flush()
+
+    # Update any blocks sent from the client
     while True:
         position_s = sys.stdin.read(8)
         if len(position_s) == 0:
@@ -65,6 +74,8 @@ with open(filename, 'rb+') as f:
         block = sys.stdin.read(blocksize)
         f.seek(position)
         f.write(block)
+
+    # Reread entire file and calculate total digest
     readremain = size
     rblocksize = blocksize
     hash_total = hashlib.new(hashname)
@@ -79,9 +90,15 @@ with open(filename, 'rb+') as f:
         readremain -= rblocksize
         if readremain == 0:
 	    break
+
+# Send final total digest to client
 sys.stdout.write(hash_total.digest())
 '''
 
+###############################################################################################
+
+
+# IOCounter: Small wrapper around stdin/stdout that counts the bytes read/written
 class IOCounter:
     def __init__(self, in_stream, out_stream):
         self.in_stream = in_stream
@@ -99,30 +116,40 @@ class IOCounter:
         self.out_stream.write(s)
         self.out_total += len(s)
 
+
 def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
     hash_total = hashlib.new(hashname)
     with open(local_filename, 'rb') as f:
         f.seek(0, 2)
+
+        # Find length of input file
         size = f.tell()
         f.seek(0)
 
         # Calculate number of blocks, including the last block which may be smaller
         blockcount = int((size + blocksize - 1) / blocksize)
 
+        # Run remote_script code on remote server, and connect to its STDIN/STDOUT
         remote_command = 'python -c "%s"' % (remote_script,)
         command = ('ssh', '--', remote_host, '--', remote_command)
         p = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         io = IOCounter(p.stdout, p.stdin)
 
+        # Send local file size, block size, remote filename and hash algorithm to server
         io.write(struct.pack('<QQQQ', size, blocksize, len(remote_filename), len(hashname)))
         io.write(remote_filename)
         io.write(hashname)
 
+        # Get back remote filesize, make sure it is big enough
         (remote_size,) = struct.unpack('<Q', io.read(8))
         if remote_size < size:
             raise RuntimeError('Remote size less than local (local: %i, remote: %i)' % (size, remote_size))
+
+        # Get digests of all remote file blocks
         remote_digest_list = [io.read(hash_total.digestsize) for i in xrange(blockcount)]
 
+        # Calculate digests of each block in local file, and total digest of all blocks
+        # Where remote digest is different from local digest, send the full block to the remote server
         for remote_digest in remote_digest_list:
             position = f.tell()
             block = f.read(blocksize)
@@ -134,8 +161,11 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
                     io.write(block)
                 except IOError:
                     break
+
+        # Now done outputting to remote server
         p.stdin.close()
 
+        # Get total remote file digest, make sure it matches local one
         remote_digest_total = io.read()
         p.wait()
         if remote_digest_total != hash_total.digest():
