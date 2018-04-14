@@ -18,6 +18,7 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import hashlib
+import os
 import struct
 import subprocess
 import sys
@@ -43,9 +44,9 @@ if not os.path.exists(filename):
     os.chmod(filename, 0600)
 
 with open(filename, 'rb+') as f:
-    f.seek(0, 2)
 
     # Send file size to client
+    f.seek(0, os.SEEK_END)
     sys.stdout.write(struct.pack('<Q', f.tell()))
 
     # Send digest of each block to client
@@ -120,9 +121,9 @@ class IOCounter:
 def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
     hash_total = hashlib.new(hashname)
     with open(local_filename, 'rb') as f:
-        f.seek(0, 2)
 
         # Find length of input file
+        f.seek(0, os.SEEK_END)
         size = f.tell()
         f.seek(0)
 
