@@ -169,8 +169,11 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
         # Get total remote file digest, make sure it matches local one
         remote_digest_total = io.read()
         p.wait()
-        if remote_digest_total != hash_total.digest():
+
+        digest_total = hash_total.digest()
+        if remote_digest_total != digest_total:
             raise RuntimeError('Checksum mismatch after transfer')
+
     return (io.in_total, io.out_total, size)
 
 if __name__ == '__main__':
