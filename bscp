@@ -35,11 +35,15 @@ hashname = sys.stdin.read(hashname_len)
 
 if not os.path.exists(filename):
     # Create sparse file
-    with open(filename, 'wb') as f:
+    f = open(filename, 'wb')
+    try:
         f.truncate(size)
+    finally:
+        f.close()
     os.chmod(filename, 0600)
 
-with open(filename, 'rb+') as f:
+f = open(filename, 'rb+')
+try:
     f.seek(0, 2)
     sys.stdout.write(struct.pack('<Q', f.tell()))
     readremain = size
@@ -79,6 +83,9 @@ with open(filename, 'rb+') as f:
         readremain -= rblocksize
         if readremain == 0:
 	    break
+finally:
+    f.close()
+
 sys.stdout.write(hash_total.digest())
 '''
 
@@ -101,7 +108,8 @@ class IOCounter:
 
 def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
     hash_total = hashlib.new(hashname)
-    with open(local_filename, 'rb') as f:
+    f = open(local_filename, 'rb')
+    try:
         f.seek(0, 2)
         size = f.tell()
         f.seek(0)
@@ -140,6 +148,8 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
         p.wait()
         if remote_digest_total != hash_total.digest():
             raise RuntimeError('Checksum mismatch after transfer')
+    finally:
+        f.close()
     return (io.in_total, io.out_total, size)
 
 if __name__ == '__main__':
