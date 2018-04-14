@@ -62,7 +62,7 @@ with open(filename, 'rb+') as f:
         sys.stdout.write(digest)
         readremain -= rblocksize
         if readremain == 0:
-	    break
+            break
     sys.stdout.flush()
 
     # Update any blocks sent from the client
@@ -89,7 +89,7 @@ with open(filename, 'rb+') as f:
         hash_total.update(block)
         readremain -= rblocksize
         if readremain == 0:
-	    break
+            break
 
 # Send final total digest to client
 sys.stdout.write(hash_total.digest())
